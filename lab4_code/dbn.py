@@ -1,6 +1,6 @@
 from util import *
 from rbm import RestrictedBoltzmannMachine
-
+from tqdm import tqdm
 class DeepBeliefNet():    
 
     ''' 
@@ -60,9 +60,12 @@ class DeepBeliefNet():
           true_imgs: visible data shaped (number of samples, size of visible layer)
           true_lbl: true labels shaped (number of samples, size of label layer). Used only for calculating accuracy, not driving the net
         """
-        
+        # NEW #
+        n_labels = true_lbl.shape[1]
+        # NEW #
+
         n_samples = true_img.shape[0]
-        
+
         vis = true_img # visible layer gets the image data
         
         lbl = np.ones(true_lbl.shape)/10. # start the net by telling you know nothing about labels        
@@ -71,12 +74,28 @@ class DeepBeliefNet():
         # and read out the labels (replace pass below and 'predicted_lbl' to your predicted labels).
         # NOTE : inferring entire train/test set may require too much compute memory (depends on your system). In that case, divide into mini-batches.
         
+        # NEW #
+        _, hid = self.rbm_stack['vis--hid'].get_h_given_v_dir(vis)
+        _, pen = self.rbm_stack['hid--pen'].get_h_given_v_dir(hid)
+
+        vis = np.concatenate((pen, lbl), axis=1)
+        # NEW #
+
         for _ in range(self.n_gibbs_recog):
 
-            pass
+            #pass
+        # NEW #
+            _, top = self.rbm_stack['pen+lbl--top'].get_h_given_v(vis)
+            p_vis, vis = self.rbm_stack['pen+lbl--top'].get_v_given_h(top)
 
-        predicted_lbl = np.zeros(true_lbl.shape)
-            
+        predicted_prob = p_vis[:,-n_labels:]
+        predicted_lbl = np.argmax(predicted_prob,axis=1)
+        self.plot_images(true_img, predicted_lbl)
+
+        print ("accuracy = %.2f%%"%(100.*np.mean(predicted_lbl==np.argmax(true_lbl,axis=1))))  
+        return
+        # NEW #
+        #predicted_lbl = np.zeros(true_lbl.shape)   
         print ("accuracy = %.2f%%"%(100.*np.mean(np.argmax(predicted_lbl,axis=1)==np.argmax(true_lbl,axis=1))))
         
         return
@@ -89,7 +108,10 @@ class DeepBeliefNet():
           true_lbl: true labels shaped (number of samples, size of label layer)
           name: string used for saving a video of generated visible activations
         """
-        
+        # NEW #
+        n_labels = true_lbl.shape[1]
+        # NEW #
+
         n_sample = true_lbl.shape[0]
         
         records = []        
@@ -102,15 +124,43 @@ class DeepBeliefNet():
         # [TODO TASK 4.2] fix the label in the label layer and run alternating Gibbs sampling in the top RBM. From the top RBM, drive the network \ 
         # top to the bottom visible layer (replace 'vis' from random to your generated visible layer).
             
-        for _ in range(self.n_gibbs_gener):
 
-            vis = np.random.rand(n_sample,self.sizes["vis"])
+        # NEW #
+        init_random_pen = True
+        if init_random_pen:
+            pen_input = np.random.binomial(n=n_sample, p=0.5, size=(n_sample, self.sizes["pen"]))
+        else:
+            random_img = np.random.binomial(n=n_sample, p=0.5, size=(n_sample, self.sizes["vis"]))
+            _, hid = self.rbm_stack['vis--hid'].get_h_given_v_dir(random_img)
+            _, pen_input = self.rbm_stack['hid--pen'].get_h_given_v_dir(hid)
+
+        vis = np.concatenate((pen_input, lbl), axis=1)
+        # NEW #
+
+        for _ in tqdm(range(self.n_gibbs_gener)):
+
             
+            # NEW #
+            _, top = self.rbm_stack['pen+lbl--top'].get_h_given_v(vis)
+            _, vis = self.rbm_stack['pen+lbl--top'].get_v_given_h(top)
+
+            _ , hid = self.rbm_stack['hid--pen'].get_v_given_h_dir(vis[:,:-n_labels])
+            p_img, img = self.rbm_stack['vis--hid'].get_v_given_h_dir(hid)
+            vis[:,-n_labels:] = lbl
+            # NEW #
+
+            #vis = np.random.rand(n_sample,self.sizes["vis"])
             records.append( [ ax.imshow(vis.reshape(self.image_size), cmap="bwr", vmin=0, vmax=1, animated=True, interpolation=None) ] )
             
-        anim = stitch_video(fig,records).save("%s.generate%d.gif"%(name,np.argmax(true_lbl))) # mp4        
-            
-        return
+        #anim = stitch_video(fig,records).save("%s.generate%d.gif"%(name,np.argmax(true_lbl))) # mp4 
+        #return
+       
+        # NEW #
+        if init_random_pen:
+            anim = self.stitch_video(fig,records).save("hist/rand_pen/%s.generate%d.mp4"%(name,np.argmax(true_lbl)))            
+        else:
+            anim = self.stitch_video(fig,records).save("hist/rand_img/%s.generate%d.mp4"%(name,np.argmax(true_lbl)))  
+        return p_img    
 
     def train_greedylayerwise(self, vis_trainset, lbl_trainset, n_iterations):
 
@@ -138,26 +188,48 @@ class DeepBeliefNet():
         except IOError :
 
             # [TODO TASK 4.2] use CD-1 to train all RBMs greedily
-        
-            print ("training vis--hid")
-            """ 
-            CD-1 training for vis--hid 
-            """            
-            self.savetofile_rbm(loc="trained_rbm",name="vis--hid")
 
-            print ("training hid--pen")
-            """ 
-            CD-1 training for hid--pen 
-            """            
-            self.rbm_stack["vis--hid"].untwine_weights()            
-            self.savetofile_rbm(loc="trained_rbm",name="hid--pen")            
+            # NEW #
+            print("training vis--hid")
+            self.rbm_stack['vis--hid'].cd1(visible_trainset=vis_trainset, n_iterations=n_iterations)
+            self.savetofile_rbm(loc="trained_rbm", name="vis--hid")
+
+            self.rbm_stack["vis--hid"].untwine_weights()
+            ph1, _ = self.rbm_stack['vis--hid'].get_h_given_v_dir(vis_trainset)
+
+            print("training hid--pen")
+            self.rbm_stack["hid--pen"].cd1(visible_trainset=ph1,n_iterations=n_iterations)
+            #self.rbm_stack["vis--hid"].untwine_weights()            
+            self.savetofile_rbm(loc="trained_rbm", name="hid--pen")
+
+            self.rbm_stack["hid--pen"].untwine_weights()
+            ph2, _ = self.rbm_stack['hid--pen'].get_h_given_v_dir(ph1)
 
             print ("training pen+lbl--top")
-            """ 
-            CD-1 training for pen+lbl--top 
-            """
-            self.rbm_stack["hid--pen"].untwine_weights()
-            self.savetofile_rbm(loc="trained_rbm",name="pen+lbl--top")            
+            ph2_labels = np.concatenate((ph2, lbl_trainset), axis=1)
+            self.rbm_stack["pen+lbl--top"].cd1(visible_trainset=ph2_labels,n_iterations=n_iterations)
+            #self.rbm_stack["hid--pen"].untwine_weights()
+            self.savetofile_rbm(loc="trained_rbm",name="pen+lbl--top") 
+        
+            #print ("training vis--hid")
+            # """ 
+            # CD-1 training for vis--hid 
+            # """            
+            #self.savetofile_rbm(loc="trained_rbm",name="vis--hid")
+
+            #print ("training hid--pen")
+            # """ 
+            # CD-1 training for hid--pen 
+            # """            
+            #self.rbm_stack["vis--hid"].untwine_weights()            
+            #self.savetofile_rbm(loc="trained_rbm",name="hid--pen")            
+
+            #print ("training pen+lbl--top")
+            # """ 
+            # CD-1 training for pen+lbl--top 
+            # """
+            #self.rbm_stack["hid--pen"].untwine_weights()
+            #self.savetofile_rbm(loc="trained_rbm",name="pen+lbl--top")            
 
         return    
 
@@ -243,3 +315,24 @@ class DeepBeliefNet():
         np.save("%s/dbn.%s.bias_h"%(loc,name),        self.rbm_stack[name].bias_h)
         return
     
+
+    def plot_images(self, img, label, max=30):
+        if img.shape[0] > max:
+            img = img[0:max]
+        fig = plt.figure(figsize=(28, 8))
+        rows = int(img.shape[0] / 10)
+        columns = 10
+        for i in range(1, rows * columns + 1):
+            fig.add_subplot(rows, columns, i)
+            plt.title('Prediction: ' + str(int(label[i-1])))
+            plt.imshow(img[i - 1].reshape(28, 28))
+
+        plt.show()
+
+    def stitch_video(self, fig, imgs):
+        """
+        Stitches a list of images and returns a animation object
+        """
+        import matplotlib.animation as animation
+
+        return animation.ArtistAnimation(fig, imgs, interval=100, blit=True, repeat=False)
