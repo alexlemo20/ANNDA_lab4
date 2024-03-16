@@ -57,7 +57,7 @@ class RestrictedBoltzmannMachine():
         
         self.momentum = 0.7
 
-        self.print_period = 500
+        self.print_period = 1
         
         self.rf = { # receptive-fields. Only applicable when visible layer is input data
             "period" : 5000, # iteration period to visualize

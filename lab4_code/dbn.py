@@ -48,7 +48,7 @@ class DeepBeliefNet():
         
         self.n_gibbs_wakesleep = 5
 
-        self.print_period = 2000
+        self.print_period = 1
         
         return
 
@@ -150,16 +150,16 @@ class DeepBeliefNet():
             # NEW #
 
             #vis = np.random.rand(n_sample,self.sizes["vis"])
-            records.append( [ ax.imshow(vis.reshape(self.image_size), cmap="bwr", vmin=0, vmax=1, animated=True, interpolation=None) ] )
+            records.append( [ ax.imshow(p_img.reshape(self.image_size), cmap="bwr", vmin=0, vmax=1, animated=True, interpolation=None) ] )
             
         #anim = stitch_video(fig,records).save("%s.generate%d.gif"%(name,np.argmax(true_lbl))) # mp4 
         #return
        
         # NEW #
         if init_random_pen:
-            anim = self.stitch_video(fig,records).save("hist/rand_pen/%s.generate%d.mp4"%(name,np.argmax(true_lbl)))            
+            anim = self.stitch_video(fig,records).save("%s.generate%d.gif"%(name,np.argmax(true_lbl)))            
         else:
-            anim = self.stitch_video(fig,records).save("hist/rand_img/%s.generate%d.mp4"%(name,np.argmax(true_lbl)))  
+            anim = self.stitch_video(fig,records).save("%s.generate%d.gif"%(name,np.argmax(true_lbl)))  
         return p_img    
 
     def train_greedylayerwise(self, vis_trainset, lbl_trainset, n_iterations):
