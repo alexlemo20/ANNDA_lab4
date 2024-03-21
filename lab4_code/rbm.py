@@ -57,7 +57,7 @@ class RestrictedBoltzmannMachine():
         
         self.momentum = 0.7
 
-        self.print_period = 1
+        self.print_period = 500
         
         self.rf = { # receptive-fields. Only applicable when visible layer is input data
             "period" : 5000, # iteration period to visualize
@@ -68,7 +68,7 @@ class RestrictedBoltzmannMachine():
         return
 
         
-    def cd1(self,visible_trainset, n_iterations=10000):
+    def cd1(self,visible_trainset, n_iterations=10000,label=''):
         
         """Contrastive Divergence with k=1 full alternating Gibbs sampling
 
@@ -107,8 +107,8 @@ class RestrictedBoltzmannMachine():
             v0 = visible_trainset[minibatch_start:minibatch_end,:]
             _, h0 = self.get_h_given_v(v0)
             pvk, vk = self.get_v_given_h(h0)
-            phk, _ = self.get_h_given_v(vk)
-            self.update_params(v0, h0, pvk, phk)
+            phk, hk = self.get_h_given_v(vk)
+            self.update_params(v0, h0, vk, hk)
         # NEW #
             
             # visualize once in a while when visible layer is input images
@@ -125,11 +125,10 @@ class RestrictedBoltzmannMachine():
                 ph0, h0 = self.get_h_given_v(visible_trainset)
                 pvk, vk = self.get_v_given_h(h0)
                 recon_loss["it"].append(it)
-                recon_loss["loss"].append(
-                    np.linalg.norm(visible_trainset - vk))
+                recon_loss["loss"].append(np.linalg.norm(visible_trainset - vk))
                 print("iteration=%7d recon_loss=%4.4f" %(it, recon_loss["loss"][-1]))
         
-        self.plot_loss(recon_loss)
+        self.plot_loss(recon_loss,label)
         # NEW #
 
         return
@@ -393,11 +392,11 @@ class RestrictedBoltzmannMachine():
         
         return    
     
-    def plot_loss(self, loss):
+    def plot_loss(self, loss,label):
         plt.title('Reconstruction loss over training iterations')
         plt.xlabel('iteration')
         plt.ylabel('reconstruction loss')
         plt.plot(loss["it"], loss["loss"])
         plt.savefig(
-            f"trained_rbm/{self.name}_loss_{self.ndim_hidden}_{self.batch_size}.png")
+            f"trained_rbm/{label}_{self.name}_loss_{self.ndim_hidden}_{self.batch_size}.png")
         plt.show()

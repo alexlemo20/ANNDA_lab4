@@ -30,9 +30,9 @@ class DeepBeliefNet():
             'vis--hid' : RestrictedBoltzmannMachine(ndim_visible=sizes["vis"], ndim_hidden=sizes["hid"],
                                                     is_bottom=True, image_size=image_size, batch_size=batch_size),
             
-            'hid--pen' : RestrictedBoltzmannMachine(ndim_visible=sizes["hid"], ndim_hidden=sizes["pen"], batch_size=batch_size),
+            #'hid--pen' : RestrictedBoltzmannMachine(ndim_visible=sizes["hid"], ndim_hidden=sizes["pen"], batch_size=batch_size),
             
-            'pen+lbl--top' : RestrictedBoltzmannMachine(ndim_visible=sizes["pen"]+sizes["lbl"], ndim_hidden=sizes["top"],
+            'pen+lbl--top' : RestrictedBoltzmannMachine(ndim_visible=sizes["hid"]+sizes["lbl"], ndim_hidden=sizes["top"], # pen
                                                         is_top=True, n_labels=n_labels, batch_size=batch_size)
         }
         
@@ -42,13 +42,13 @@ class DeepBeliefNet():
 
         self.batch_size = batch_size
         
-        self.n_gibbs_recog = 15
+        self.n_gibbs_recog = 5
         
         self.n_gibbs_gener = 200
         
         self.n_gibbs_wakesleep = 5
 
-        self.print_period = 1
+        self.print_period = 2000
         
         return
 
@@ -76,10 +76,12 @@ class DeepBeliefNet():
         
         # NEW #
         _, hid = self.rbm_stack['vis--hid'].get_h_given_v_dir(vis)
-        _, pen = self.rbm_stack['hid--pen'].get_h_given_v_dir(hid)
+        #_, pen = self.rbm_stack['hid--pen'].get_h_given_v_dir(hid)
 
-        vis = np.concatenate((pen, lbl), axis=1)
+        vis = np.concatenate((hid, lbl), axis=1) # pen
         # NEW #
+
+        label_activations_history = []
 
         for _ in range(self.n_gibbs_recog):
 
@@ -87,12 +89,31 @@ class DeepBeliefNet():
         # NEW #
             _, top = self.rbm_stack['pen+lbl--top'].get_h_given_v(vis)
             p_vis, vis = self.rbm_stack['pen+lbl--top'].get_v_given_h(top)
+            
+            label_activations_history.append(vis[:, -n_labels:])
 
+        
         predicted_prob = p_vis[:,-n_labels:]
-        predicted_lbl = np.argmax(predicted_prob,axis=1)
+        
+        softmax_probs = np.exp(predicted_prob) / np.sum(np.exp(predicted_prob), axis=1, keepdims=True)
+
+        predicted_lbl = np.argmax(softmax_probs,axis=1) # predicted_prob
         self.plot_images(true_img, predicted_lbl)
 
         print ("accuracy = %.2f%%"%(100.*np.mean(predicted_lbl==np.argmax(true_lbl,axis=1))))  
+        
+        mean_activations = np.mean(label_activations_history, axis=1)  # Compute mean along the samples axis
+        plt.figure(figsize=(10, 6))
+        for i in range(mean_activations.shape[1]):
+            plt.plot(mean_activations[:, i], label=f'Label Unit {i+1}')
+
+        plt.xlabel('Iteration')
+        plt.ylabel('Mean Activation')
+        plt.title('Mean Activation of Label Units Over Iterations')
+        plt.legend()
+        plt.grid(True)
+        plt.show()
+
         return
         # NEW #
         #predicted_lbl = np.zeros(true_lbl.shape)   
@@ -177,39 +198,41 @@ class DeepBeliefNet():
 
         try :
 
-            self.loadfromfile_rbm(loc="trained_rbm",name="vis--hid")
-            self.rbm_stack["vis--hid"].untwine_weights()            
+             self.loadfromfile_rbm(loc="trained_rbm",name="vis--hid")
+             self.rbm_stack["vis--hid"].untwine_weights()            
             
-            self.loadfromfile_rbm(loc="trained_rbm",name="hid--pen")
-            self.rbm_stack["hid--pen"].untwine_weights()
+             #self.loadfromfile_rbm(loc="trained_rbm",name="hid--pen")
+             #self.rbm_stack["hid--pen"].untwine_weights()
             
-            self.loadfromfile_rbm(loc="trained_rbm",name="pen+lbl--top")        
+             self.loadfromfile_rbm(loc="trained_rbm",name="pen+lbl--top")        
 
         except IOError :
+            print("ERROR")
+            return
 
             # [TODO TASK 4.2] use CD-1 to train all RBMs greedily
 
-            # NEW #
-            print("training vis--hid")
-            self.rbm_stack['vis--hid'].cd1(visible_trainset=vis_trainset, n_iterations=n_iterations)
-            self.savetofile_rbm(loc="trained_rbm", name="vis--hid")
+        # NEW #
+#        print("training vis--hid")
+#        self.rbm_stack['vis--hid'].cd1(visible_trainset=vis_trainset, n_iterations=n_iterations,label='vis--hid')
+#        self.savetofile_rbm(loc="trained_rbm", name="vis--hid")
 
-            self.rbm_stack["vis--hid"].untwine_weights()
-            ph1, _ = self.rbm_stack['vis--hid'].get_h_given_v_dir(vis_trainset)
+#        self.rbm_stack["vis--hid"].untwine_weights()
+#        ph1, _ = self.rbm_stack['vis--hid'].get_h_given_v_dir(vis_trainset)
 
-            print("training hid--pen")
-            self.rbm_stack["hid--pen"].cd1(visible_trainset=ph1,n_iterations=n_iterations)
-            #self.rbm_stack["vis--hid"].untwine_weights()            
-            self.savetofile_rbm(loc="trained_rbm", name="hid--pen")
+        # print("training hid--pen")
+        # self.rbm_stack["hid--pen"].cd1(visible_trainset=ph1,n_iterations=n_iterations,label='hid--pen')
+        # #self.rbm_stack["vis--hid"].untwine_weights()            
+        # self.savetofile_rbm(loc="trained_rbm", name="hid--pen")
 
-            self.rbm_stack["hid--pen"].untwine_weights()
-            ph2, _ = self.rbm_stack['hid--pen'].get_h_given_v_dir(ph1)
+        # self.rbm_stack["hid--pen"].untwine_weights()
+        # ph2, _ = self.rbm_stack['hid--pen'].get_h_given_v_dir(ph1)
 
-            print ("training pen+lbl--top")
-            ph2_labels = np.concatenate((ph2, lbl_trainset), axis=1)
-            self.rbm_stack["pen+lbl--top"].cd1(visible_trainset=ph2_labels,n_iterations=n_iterations)
-            #self.rbm_stack["hid--pen"].untwine_weights()
-            self.savetofile_rbm(loc="trained_rbm",name="pen+lbl--top") 
+#        print ("training pen+lbl--top")
+#        ph2_labels = np.concatenate((ph1, lbl_trainset), axis=1)
+#        self.rbm_stack["pen+lbl--top"].cd1(visible_trainset=ph2_labels,n_iterations=n_iterations,label='pen+lbl--top')
+        #self.rbm_stack["hid--pen"].untwine_weights()
+#        self.savetofile_rbm(loc="trained_rbm",name="pen+lbl--top") 
         
             #print ("training vis--hid")
             # """ 
